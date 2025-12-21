@@ -1,0 +1,70 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    hostname: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./deploy/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+      - ./deploy/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+
+  qdrant:
+    image: qdrant/qdrant:v1.10.1
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  indexer-service:
+    build:
+      context: .
+      dockerfile: services/indexer_service/Dockerfile
+    env_file: .env
+    depends_on:
+      - qdrant
+    volumes:
+      - ./data:/data:ro
+
+  rag-service:
+    build:
+      context: .
+      dockerfile: services/rag_service/Dockerfile
+    env_file: .env
+    depends_on:
+      - rabbitmq
+      - qdrant
+    volumes:
+      - ./models:/models:ro
+    # For GPU hosts, enable NVIDIA runtime (docker compose v2):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - capabilities: [gpu]
+
+  telegram-bot-service:
+    build:
+      context: .
+      dockerfile: services/telegram_bot_service/Dockerfile
+    env_file: .env
+    environment:
+      BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      RAG_EXCHANGE: ${RAG_RPC_EXCHANGE}
+      RAG_ROUTING_SEARCH: ${RAG_SEARCH_ROUTING_KEY}
+      RAG_ROUTING_RECOMMEND: ${RAG_RECOMMEND_ROUTING_KEY}
+      RAG_ROUTING_QUIZ: ${RAG_QUIZ_ROUTING_KEY}
+      RAG_RPC_TIMEOUT_S: ${RAG_RPC_TIMEOUT_S:-35}
+      ALLOWED_TELEGRAM_IDS: ${ALLOWED_TELEGRAM_IDS}
+    depends_on:
+      - rabbitmq
+      - rag-service
+
+volumes:
+  rabbitmq_data:
+  qdrant_data:

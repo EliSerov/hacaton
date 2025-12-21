@@ -1,0 +1,113 @@
+{
+  "vhosts": [
+    {
+      "name": "rag_vhost"
+    }
+  ],
+  "users": [
+    {
+      "name": "rag_user",
+      "password": "rag_pass",
+      "tags": ""
+    }
+  ],
+  "permissions": [
+    {
+      "user": "rag_user",
+      "vhost": "rag_vhost",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    }
+  ],
+  "exchanges": [
+    {
+      "name": "rag.rpc",
+      "vhost": "rag_vhost",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "rag.dlx",
+      "vhost": "rag_vhost",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    }
+  ],
+  "queues": [
+    {
+      "name": "rag.search.q",
+      "vhost": "rag_vhost",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "rag.dlx"
+      }
+    },
+    {
+      "name": "rag.recommend.q",
+      "vhost": "rag_vhost",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "rag.dlx"
+      }
+    },
+    {
+      "name": "rag.quiz.q",
+      "vhost": "rag_vhost",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "rag.dlx"
+      }
+    },
+    {
+      "name": "rag.dlq",
+      "vhost": "rag_vhost",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    }
+  ],
+  "bindings": [
+    {
+      "source": "rag.rpc",
+      "vhost": "rag_vhost",
+      "destination": "rag.search.q",
+      "destination_type": "queue",
+      "routing_key": "search",
+      "arguments": {}
+    },
+    {
+      "source": "rag.rpc",
+      "vhost": "rag_vhost",
+      "destination": "rag.recommend.q",
+      "destination_type": "queue",
+      "routing_key": "recommend",
+      "arguments": {}
+    },
+    {
+      "source": "rag.rpc",
+      "vhost": "rag_vhost",
+      "destination": "rag.quiz.q",
+      "destination_type": "queue",
+      "routing_key": "quiz",
+      "arguments": {}
+    },
+    {
+      "source": "rag.dlx",
+      "vhost": "rag_vhost",
+      "destination": "rag.dlq",
+      "destination_type": "queue",
+      "routing_key": "dlq",
+      "arguments": {}
+    }
+  ]
+}
