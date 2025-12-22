@@ -33,7 +33,7 @@ class RAGClient:
         self._channel: Optional[AbstractRobustChannel] = None
         self._exchange: Optional[aio_pika.Exchange] = None
 
-        self._reply_queue = "amq.rabbitmq.reply-to"
+        self._reply_queue: Optional[str] = None
         self._reply_q: Optional[aio_pika.Queue] = None
         self._pending: Dict[str, asyncio.Future[Dict[str, Any]]] = {}
         self._pending_lock = asyncio.Lock()
@@ -55,51 +55,49 @@ class RAGClient:
         logger.info("RAGClient connected. Exchange='%s'", settings.rag_exchange)
 
     async def _start_reply_consumer(self) -> None:
+        """
+        Start a private reply queue consumer for RPC responses.
+
+        We intentionally avoid RabbitMQ "direct reply-to" (amq.rabbitmq.reply-to) here because
+        it can break on reconnects/consumer cancellations and causes:
+        PRECONDITION_FAILED - fast reply consumer does not exist
+        """
         if self._consumer_started:
             return
         assert self._channel is not None
+
+        # Server-named, exclusive, auto-delete queue: stable for the lifetime of this connection.
+        # RobustChannel will re-declare it on reconnect.
+        self._reply_q = await self._channel.declare_queue(
+            name="",
+            durable=False,
+            exclusive=True,
+            auto_delete=True,
+        )
+        self._reply_queue = self._reply_q.name
 
         async def on_response(message: aio_pika.IncomingMessage) -> None:
             cid = message.correlation_id
             if not cid:
                 return
+            try:
+                payload = json.loads(message.body.decode("utf-8"))
+            except Exception:
+                logger.exception("Failed to decode RPC response JSON")
+                return
+
             async with self._pending_lock:
                 fut = self._pending.pop(cid, None)
-            if fut is None or fut.done():
-                return
-            try:
-                data = json.loads(message.body.decode("utf-8"))
-            except Exception:
-                data = {"summary": "Некорректный ответ от RAG-сервиса.", "articles": []}
-            fut.set_result(data)
 
-        self._reply_q = await self._channel.get_queue(self._reply_queue, ensure=False)
+            if fut and not fut.done():
+                fut.set_result(payload)
+
         await self._reply_q.consume(on_response, no_ack=True)
         self._consumer_started = True
 
-    async def close(self) -> None:
-        # Fail any pending futures
-        async with self._pending_lock:
-            for cid, fut in list(self._pending.items()):
-                if not fut.done():
-                    fut.set_exception(RuntimeError("RAGClient is closing"))
-            self._pending.clear()
-
-        try:
-            if self._channel and not self._channel.is_closed:
-                await self._channel.close()
-        finally:
-            if self._conn and not self._conn.is_closed:
-                await self._conn.close()
-
-        self._conn = None
-        self._channel = None
-        self._exchange = None
-        self._consumer_started = False
-        logger.info("RAGClient closed")
 
     async def _rpc_call(self, routing_key: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-        if not self._conn or not self._channel or not self._exchange:
+        if not self._conn or not self._channel or not self._exchange or not self._reply_queue:
             raise RuntimeError("RAGClient is not connected. Call connect() on startup.")
 
         correlation_id = str(uuid.uuid4())
@@ -115,7 +113,7 @@ class RAGClient:
 
         msg = aio_pika.Message(
             body=body,
-            reply_to=self._reply_queue,
+            reply_to=self._reply_queue or "",
             correlation_id=correlation_id,
             headers=headers,
             delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
@@ -128,7 +126,7 @@ class RAGClient:
             return await asyncio.wait_for(fut, timeout=settings.rag_rpc_timeout_s)
         except Exception:
             async with self._pending_lock:
-                self._pending.pop(correlation_id, None)
+                await self._pending.pop(correlation_id, None)
             raise
 
     async def search(
