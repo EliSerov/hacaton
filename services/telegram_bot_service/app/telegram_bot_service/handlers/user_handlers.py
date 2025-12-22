@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import traceback
 from html import escape
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from aiogram import Router, F
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     Message,
     ReplyKeyboardMarkup,
@@ -12,12 +15,9 @@ from aiogram.types import (
     InlineKeyboardButton,
     CallbackQuery,
 )
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.context import FSMContext
 
-from telegram_bot_service.services.rag_client import get_rag_client
-from telegram_bot_service.models.contracts import SearchResponse
-
+from services.telegram_bot_service.app.telegram_bot_service.models.contracts import SearchResponse
+from services.telegram_bot_service.app.telegram_bot_service.services.rag_client import get_rag_client
 
 router = Router()
 
@@ -199,8 +199,12 @@ async def run_search(message: Message, state: FSMContext) -> None:
             date=data.get("date"),
             topic=data.get("topic"),
         )
-    except Exception:
-        await message.answer("❌ Ошибка при поиске. Попробуйте позже.")
+    except Exception as e:
+        tb = traceback.format_exc()
+        await message.answer(
+            "❌ Ошибка при поиске. Попробуйте позже.\n"
+            f"{tb}"
+        )
         return
 
     # Save for callbacks
