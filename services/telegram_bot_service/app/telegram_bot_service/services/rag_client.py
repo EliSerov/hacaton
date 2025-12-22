@@ -34,6 +34,7 @@ class RAGClient:
         self._exchange: Optional[aio_pika.Exchange] = None
 
         self._reply_queue = "amq.rabbitmq.reply-to"
+        self._reply_q: Optional[aio_pika.Queue] = None
         self._pending: Dict[str, asyncio.Future[Dict[str, Any]]] = {}
         self._pending_lock = asyncio.Lock()
         self._consumer_started = False
@@ -72,7 +73,8 @@ class RAGClient:
                 data = {"summary": "Некорректный ответ от RAG-сервиса.", "articles": []}
             fut.set_result(data)
 
-        await self._channel.consume(on_response, queue_name=self._reply_queue, no_ack=True)
+        self._reply_q = await self._channel.get_queue(self._reply_queue, ensure=False)
+        await self._reply_q.consume(on_response, no_ack=True)
         self._consumer_started = True
 
     async def close(self) -> None:
