@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Awaitable, Callable, Dict, Optional
+from typing import Awaitable, Callable, Optional
 
 import aio_pika
 from aio_pika.abc import AbstractRobustConnection
@@ -28,13 +28,20 @@ class RpcServer:
         self._prefetch_count = prefetch_count
         self._required_api_key = required_api_key
 
+        # Keep strong refs (helps observability and avoids accidental GC/close).
+        self._channel: Optional[aio_pika.abc.AbstractRobustChannel] = None
+        self._queue: Optional[aio_pika.abc.AbstractRobustQueue] = None
+        self._consumer_tag: Optional[str] = None
+
     async def start(self) -> None:
         channel = await self._conn.channel()
         await channel.set_qos(prefetch_count=self._prefetch_count)
+        self._channel = channel
 
         exchange = await channel.declare_exchange(self._exchange_name, aio_pika.ExchangeType.DIRECT, durable=True)
         queue = await channel.declare_queue(self._queue_name, durable=True)
         await queue.bind(exchange, routing_key=self._routing_key)
+        self._queue = queue
 
         async def on_message(message: aio_pika.IncomingMessage) -> None:
             trace_id = (message.headers or {}).get("x-trace-id", "")
@@ -78,5 +85,14 @@ class RpcServer:
                 finally:
                     await message.ack()
 
-        await queue.consume(on_message)
-        logger.info("RPC server started", extra={"trace_id": ""})
+        self._consumer_tag = await queue.consume(on_message)
+        logger.info(
+            "RPC server started",
+            extra={
+                "trace_id": "",
+                "queue": self._queue_name,
+                "exchange": self._exchange_name,
+                "routing_key": self._routing_key,
+                "prefetch": self._prefetch_count,
+            },
+        )

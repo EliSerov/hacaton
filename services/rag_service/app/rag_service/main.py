@@ -1,18 +1,6 @@
-"""RAG service entrypoint.
-
-We run as a script in Docker for maximum portability. Ensure the project root
-is on sys.path so absolute imports (common.*, rag_service.*) are stable.
-"""
-
-import os
-import sys
-
-_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
-
 import asyncio
 import logging
+from typing import Optional
 
 from common.config import AppSettings
 from common.logging import setup_logging
@@ -37,39 +25,63 @@ async def main() -> None:
 
     conn = await connect(settings.amqp_url)
 
-    llm = LlamaCppLLM(
-        model_path=settings.llm_model_path,
-        n_ctx=settings.llm_n_ctx,
-        max_tokens=settings.llm_max_tokens,
-        temperature=settings.llm_temperature,
-        top_p=settings.llm_top_p,
-        n_gpu_layers=settings.llm_n_gpu_layers,
-    )
+    # Heavy init (LLM load) can take a long time; start consumers immediately
+    # so we don't accumulate unconsumed messages in RabbitMQ.
+    rag_ready = asyncio.Event()
+    rag_holder: dict = {"rag": None}  # type: ignore[var-annotated]
 
-    embedder = QueryEmbedder(settings.embed_model)
-    qrepo = QdrantSearchRepository(settings.qdrant_host, settings.qdrant_port, settings.qdrant_collection)
-    retriever = Retriever(qrepo)
-    rag = RagService(
-        embedder=embedder,
-        qrepo=qrepo,
-        retriever=retriever,
-        llm=llm,
-        prompt_builder=PromptBuilder(),
-        mapper=ContractMapper(),
-    )
+    async def init_rag() -> None:
+        logger.info("Initializing RAG components (LLM warmup may take a while)", extra={"trace_id": ""})
+        llm = LlamaCppLLM(
+            model_path=settings.llm_model_path,
+            n_ctx=settings.llm_n_ctx,
+            max_tokens=settings.llm_max_tokens,
+            temperature=settings.llm_temperature,
+            top_p=settings.llm_top_p,
+            n_gpu_layers=settings.llm_n_gpu_layers,
+        )
+
+        embedder = QueryEmbedder(settings.embed_model)
+        qrepo = QdrantSearchRepository(settings.qdrant_host, settings.qdrant_port, settings.qdrant_collection)
+        retriever = Retriever(qrepo)
+        rag_holder["rag"] = RagService(
+            embedder=embedder,
+            qrepo=qrepo,
+            retriever=retriever,
+            llm=llm,
+            prompt_builder=PromptBuilder(),
+            mapper=ContractMapper(),
+        )
+        rag_ready.set()
+        logger.info("RAG components initialized", extra={"trace_id": ""})
 
     # Ensure GPU/LLM single-threaded execution across queues
     gpu_lock = asyncio.Lock()
 
+    async def get_rag() -> Optional[RagService]:
+        if not rag_ready.is_set():
+            # Do not block the queue indefinitely; reply with a clear message.
+            return None
+        return rag_holder["rag"]
+
     async def search_handler(payload: dict, meta: dict) -> dict:
+        rag = await get_rag()
+        if rag is None:
+            return {"summary": "Сервис прогревается (загрузка модели). Попробуйте через 30–60 секунд.", "articles": []}
         async with gpu_lock:
             return rag.search(payload, trace_id=meta.get("trace_id", ""))
 
     async def recommend_handler(payload: dict, meta: dict) -> dict:
+        rag = await get_rag()
+        if rag is None:
+            return {"summary": "Сервис прогревается (загрузка модели). Попробуйте позже.", "articles": []}
         async with gpu_lock:
             return rag.recommend(payload, trace_id=meta.get("trace_id", ""))
 
     async def quiz_handler(payload: dict, meta: dict) -> dict:
+        rag = await get_rag()
+        if rag is None:
+            return {"summary": "Сервис прогревается (загрузка модели). Попробуйте позже.", "articles": []}
         async with gpu_lock:
             return rag.quiz(payload, trace_id=meta.get("trace_id", ""))
 
@@ -81,6 +93,9 @@ async def main() -> None:
 
     for s in servers:
         await s.start()
+
+    # kick off warmup after consumers are online
+    asyncio.create_task(init_rag())
 
     logger.info("rag-service running", extra={"trace_id": ""})
     # keep alive
