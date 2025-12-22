@@ -1,3 +1,16 @@
+"""RAG service entrypoint.
+
+We run as a script in Docker for maximum portability. Ensure the project root
+is on sys.path so absolute imports (common.*, rag_service.*) are stable.
+"""
+
+import os
+import sys
+
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
 import asyncio
 import logging
 
@@ -5,13 +18,15 @@ from common.config import AppSettings
 from common.logging import setup_logging
 from common.rabbit.connection import connect
 from common.rabbit.rpc_server import RpcServer
-from services.rag_service.app.rag_service.embedder import QueryEmbedder
-from services.rag_service.app.rag_service.llm import LlamaCppLLM
-from services.rag_service.app.rag_service.mapper import ContractMapper
-from services.rag_service.app.rag_service.prompt_builder import PromptBuilder
-from services.rag_service.app.rag_service.qdrant_repo import QdrantSearchRepository
-from services.rag_service.app.rag_service.retriever import Retriever
-from services.rag_service.app.rag_service.service import RagService
+
+from rag_service.embedder import QueryEmbedder
+from rag_service.qdrant_repo import QdrantSearchRepository
+from rag_service.retriever import Retriever
+from rag_service.prompt_builder import PromptBuilder
+from rag_service.llm import LlamaCppLLM
+from rag_service.mapper import ContractMapper
+from rag_service.service import RagService
+
 
 logger = logging.getLogger(__name__)
 

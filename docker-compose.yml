@@ -42,11 +42,11 @@ services:
     volumes:
       - ./models:/models:ro
     # For GPU hosts, enable NVIDIA runtime (docker compose v2):
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - capabilities: [gpu]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
 
   telegram-bot-service:
     build:

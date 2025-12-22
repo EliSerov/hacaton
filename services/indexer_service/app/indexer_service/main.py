@@ -1,3 +1,16 @@
+"""Indexer entrypoint.
+
+We intentionally make the entrypoint resilient to Python path differences inside
+containers by ensuring the project root ("/app") is on sys.path.
+"""
+
+import os
+import sys
+
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
 import logging
 from typing import List
 
@@ -73,7 +86,7 @@ def run() -> None:
 
         chunks = chunker.split(content)
         for chunk_id, chunk_text in enumerate(chunks):
-            point_id = f"{article_id}:{chunk_id}"
+            point_id = repo.article_id_from_url(url)
             payload = {
                 "article_id": article_id,
                 "title": title,

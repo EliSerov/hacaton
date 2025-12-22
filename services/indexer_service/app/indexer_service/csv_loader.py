@@ -15,7 +15,7 @@ class CsvDirectoryLoader:
 
     def iter_articles(self) -> Iterable[CsvArticle]:
         for csv_path in self.list_csv_files():
-            df = pd.read_csv(csv_path)
+            df = pd.read_csv(csv_path, sep=',')
             # Expecting columns:
             # id, title, author, platform, url, content, pub_date, subtopic
             for _, row in df.iterrows():
