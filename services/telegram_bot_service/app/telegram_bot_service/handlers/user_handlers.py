@@ -1,12 +1,8 @@
-from __future__ import annotations
-
-import traceback
 from html import escape
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+import traceback
 
 from aiogram import Router, F
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     Message,
     ReplyKeyboardMarkup,
@@ -15,9 +11,12 @@ from aiogram.types import (
     InlineKeyboardButton,
     CallbackQuery,
 )
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.context import FSMContext
 
-from services.telegram_bot_service.app.telegram_bot_service.models.contracts import SearchResponse
-from services.telegram_bot_service.app.telegram_bot_service.services.rag_client import get_rag_client
+from telegram_bot_service.services.rag_client import get_rag_client
+from telegram_bot_service.models.contracts import SearchResponse
+
 
 router = Router()
 
