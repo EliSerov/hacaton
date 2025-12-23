@@ -1,83 +1,38 @@
-# Tech Media RAG MVP (Cloud.ru)
+# Cloud.ru RAG MVP (GPU 6GB): Qdrant + FastAPI + Aiogram
 
-MVP AI-агента для интеллектуального поиска и анализа статей технологических СМИ на базе **RAG**.
+## Что это
+MVP AI-агента на основе RAG:
+- ingest CSV статей в Qdrant (cosine similarity)
+- retrieval top-k + генерация аннотированного резюме со ссылками на источники
+- Telegram-бот (Aiogram) из вашего кода
+- FastAPI backend (RAG API)
 
-## Возможности (MVP)
-- Поиск статей по запросу (**RAG**): эмбеддинги запроса → поиск ближайших документов в **Qdrant** → генерация ответа.
-- Краткое **аннотационное резюме** с **ссылками на источники** (цитирование вида `[1][2]...`, где `[n]` соответствует `articles[n-1]`).
-- Фильтры: **автор**, **дата**, **тематика** (topic = `subtopic` из CSV).
-- Доп. функции:
-  - рекомендации похожих публикаций;
-  - генерация вопросов/мини-теста по найденным материалам.
-- Интерфейс: **Telegram-бот**.
-- Безопасность: аутентификация/авторизация (Telegram user_id + allowlist), service-to-service API key через AMQP headers, логирование с trace_id.
+## Требования
+- Docker + docker compose
+- NVIDIA GPU 6GB (6144 MiB) и nvidia-container-toolkit
 
-## Архитектура
-Сервисы:
-1. `telegram-bot-service` — UI/диалоги Telegram, хранение фильтров, RPC-запросы в RAG.
-2. `rag-service` — один процесс (один CUDA-контекст): retrieval в Qdrant + LLM summary/quiz/recommend.
-3. `indexer-service` — батч-индексация CSV → чанки → эмбеддинги → upsert в Qdrant.
+Проверка GPU:
+```bash
+docker run --rm --gpus all nvidia/cuda:12.1.1-runtime-ubuntu22.04 nvidia-smi
+```
 
-Транспорт: **RabbitMQ** (RPC поверх AMQP). Хранилище векторов: **Qdrant**.
+## CSV
+- UTF-8, разделитель `,`
+- колонки: `id,title,author,platform,url,content,pub_date,subtopic`
+- можно несколько файлов: положите все CSV в `./data/`
 
-Подробности: см. `docs/ARCHITECTURE.md`.
-
-## Быстрый старт (Docker)
-### 0) Подготовьте модель (локально)
-Проект ожидает локальный **GGUF**-файл LLM в каталоге `./models/`.
-
-По умолчанию (см. `.env.example`) путь:
-- `./models/model.gguf`
-
-> Примечание: модель в репозиторий не включена из-за размера.
-
-### 1) Настройте переменные окружения
-Скопируйте:
+## Запуск
 ```bash
 cp .env.example .env
-```
-Заполните:
-- `TELEGRAM_BOT_TOKEN`
-- `SERVICE_API_KEY` (общий секрет для bot → rag)
-- при необходимости: `ALLOWED_TELEGRAM_IDS` (CSV-список id), либо оставьте пустым для режима “без allowlist”.
-
-### 2) Запустите инфраструктуру
-```bash
-docker compose up -d rabbitmq qdrant
+# заполните BOT_TOKEN (обязательно) и при желании ALLOWED_USER_IDS / API_KEY
+docker compose up --build
 ```
 
-### 3) Индексация CSV
-Положите ваши CSV в `./data/` (можно несколько файлов).
+## Бот
+- /start, /help, /search
+- фильтры кнопками: Автор / Дата / Тема
+- кнопка ✅ Выполнить поиск
 
-Запустите индексатор:
-```bash
-docker compose run --rm indexer-service
-```
-
-### 4) Запуск RAG и бота
-```bash
-docker compose up -d rag-service telegram-bot-service
-```
-
-## Использование в Telegram
-- Пишите обычным текстом — это `query`.
-- Фильтры:
-  - `/filters` — показать текущие фильтры
-  - `/set_author Иванов`
-  - `/set_date 2024-12-01`
-  - `/set_topic ИИ`
-  - `/clear_filters`
-
-Доп. функции:
-- `/recommend` — рекомендации похожих статей по последнему запросу
-- `/quiz` — мини-тест по последнему результату
-
-## Материалы
-- Презентация: `docs/presentation.pptx`
-- Архитектура: `docs/ARCHITECTURE.md`
-- Шаги создания: `docs/BUILD_STEPS.md`
-- Руководство по развёртыванию: `docs/DEPLOYMENT.md`
-- План развития: `docs/ROADMAP.md`
-
-## Лицензия
-MIT (см. `LICENSE`).
+## API
+- GET /health
+- POST /rag/search (совместим с RAGClient)
