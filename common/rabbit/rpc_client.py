@@ -17,7 +17,7 @@ class RpcClient:
         self,
         routing_key: str,
         payload: Dict[str, Any],
-        timeout_s: float = 30.0,
+        timeout_s: float = 120.0,
         trace_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         channel = await self._conn.channel()
