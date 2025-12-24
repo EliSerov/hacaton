@@ -108,92 +108,92 @@ class RagService:
 
         return self._mapper.to_contract(summary, articles)
 
-def recommend(self, payload: Dict[str, Any], trace_id: str = "") -> Dict[str, Any]:
-    """Recommend similar publications for a given seed URL.
+    def recommend(self, payload: Dict[str, Any], trace_id: str = "") -> Dict[str, Any]:
+        """Recommend similar publications for a given seed URL.
 
-    Payload contract:
-      {"url": "<seed_url>", "top_k": 5}
-    """
-    try:
-        req = RecommendRequest.model_validate(payload)
-    except Exception:
-        return {"summary": "Некорректный запрос.", "articles": []}
+        Payload contract:
+          {"url": "<seed_url>", "top_k": 5}
+        """
+        try:
+            req = RecommendRequest.model_validate(payload)
+        except Exception:
+            return {"summary": "Некорректный запрос.", "articles": []}
 
-    seed_url = req.url.strip()
-    seed_article_id = str(uuid.uuid5(uuid.NAMESPACE_URL, seed_url))
+        seed_url = req.url.strip()
+        seed_article_id = str(uuid.uuid5(uuid.NAMESPACE_URL, seed_url))
 
-    seed_vec = self._qrepo.retrieve_vector(f"{seed_article_id}:0")
-    if seed_vec is None:
-        qf = Filter(must=[FieldCondition(key="article_id", match=MatchValue(value=seed_article_id))])
-        pts = self._qrepo.scroll_payloads(qf, limit=1)
-        if pts:
-            seed_vec = self._qrepo.retrieve_vector(str(pts[0]["id"]))
+        seed_vec = self._qrepo.retrieve_vector(f"{seed_article_id}:0")
+        if seed_vec is None:
+            qf = Filter(must=[FieldCondition(key="article_id", match=MatchValue(value=seed_article_id))])
+            pts = self._qrepo.scroll_payloads(qf, limit=1)
+            if pts:
+                seed_vec = self._qrepo.retrieve_vector(str(pts[0]["id"]))
 
-    if seed_vec is None:
-        return {"summary": "Не удалось найти исходную статью для рекомендаций.", "articles": []}
+        if seed_vec is None:
+            return {"summary": "Не удалось найти исходную статью для рекомендаций.", "articles": []}
 
-    hits = self._qrepo.search(seed_vec, qfilter=None, limit=req.top_k * 20)
-    chunks = [RetrievedChunk(score=h["score"], payload=h["payload"]) for h in hits]
-    aggregated = self._retriever.aggregate(chunks, max_articles=req.top_k + 5)
+        hits = self._qrepo.search(seed_vec, qfilter=None, limit=req.top_k * 20)
+        chunks = [RetrievedChunk(score=h["score"], payload=h["payload"]) for h in hits]
+        aggregated = self._retriever.aggregate(chunks, max_articles=req.top_k + 5)
 
-    aggregated = [a for a in aggregated if a.payload.get("article_id") != seed_article_id]
-    if not aggregated:
-        return {"summary": "Похожие публикации не найдены.", "articles": []}
+        aggregated = [a for a in aggregated if a.payload.get("article_id") != seed_article_id]
+        if not aggregated:
+            return {"summary": "Похожие публикации не найдены.", "articles": []}
 
-    articles, _ = self._build_sources(aggregated, limit_articles=req.top_k)
-    if not articles:
-        return {"summary": "Похожие публикации не найдены.", "articles": []}
+        articles, _ = self._build_sources(aggregated, limit_articles=req.top_k)
+        if not articles:
+            return {"summary": "Похожие публикации не найдены.", "articles": []}
 
-    refs = "".join([f"[{i}]" for i in range(1, len(articles) + 1)])
-    summary = f"Найдено {len(articles)} похожих публикаций. Источники: {refs}"
-    return self._mapper.to_contract(summary, articles)
-
-def quiz(self, payload: Dict[str, Any], trace_id: str = "") -> Dict[str, Any]:
-    """Generate a quiz from a list of article URLs.
-
-    Payload contract:
-      {"urls": ["..."], "n_questions": 8}
-    """
-    try:
-        req = QuizRequest.model_validate(payload)
-    except Exception:
-        return {"summary": "Некорректный запрос.", "articles": []}
-
-    aggregated: List[AggregatedArticle] = []
-
-    for url in req.urls:
-        url = (url or "").strip()
-        if not url:
-            continue
-        article_id = str(uuid.uuid5(uuid.NAMESPACE_URL, url))
-        qf = Filter(must=[FieldCondition(key="article_id", match=MatchValue(value=article_id))])
-        pts = self._qrepo.scroll_payloads(qf, limit=8)
-        if not pts:
-            continue
-
-        pts_sorted = sorted(pts, key=lambda p: int(p["payload"].get("chunk_id", 0)))
-        p0 = pts_sorted[0]["payload"]
-        texts = []
-        for p in pts_sorted[:3]:
-            t = (p["payload"].get("text") or "").strip()
-            if t:
-                texts.append(t)
-
-        aggregated.append(AggregatedArticle(best_score=1.0, payload=p0, texts=texts))
-
-    if not aggregated:
-        return {"summary": "Ничего не найдено для генерации теста.", "articles": []}
-
-    articles, sources = self._build_sources(aggregated, limit_articles=min(len(aggregated), 5))
-    prompt = self._prompt_builder.build_quiz("Тест по выбранным материалам", sources, n_questions=req.n_questions)
-    quiz_text = self._llm.generate(prompt).strip()
-
-    if not quiz_text:
-        quiz_text = "Тест не удалось сгенерировать на основе найденных материалов."
-
-    if "Источники" not in quiz_text:
         refs = "".join([f"[{i}]" for i in range(1, len(articles) + 1)])
-        quiz_text = quiz_text + f"Источники: {refs}"
+        summary = f"Найдено {len(articles)} похожих публикаций. Источники: {refs}"
+        return self._mapper.to_contract(summary, articles)
 
-    return self._mapper.to_contract(quiz_text, articles)
+    def quiz(self, payload: Dict[str, Any], trace_id: str = "") -> Dict[str, Any]:
+        """Generate a quiz from a list of article URLs.
+
+        Payload contract:
+          {"urls": ["..."], "n_questions": 8}
+        """
+        try:
+            req = QuizRequest.model_validate(payload)
+        except Exception:
+            return {"summary": "Некорректный запрос.", "articles": []}
+
+        aggregated: List[AggregatedArticle] = []
+
+        for url in req.urls:
+            url = (url or "").strip()
+            if not url:
+                continue
+            article_id = str(uuid.uuid5(uuid.NAMESPACE_URL, url))
+            qf = Filter(must=[FieldCondition(key="article_id", match=MatchValue(value=article_id))])
+            pts = self._qrepo.scroll_payloads(qf, limit=8)
+            if not pts:
+                continue
+
+            pts_sorted = sorted(pts, key=lambda p: int(p["payload"].get("chunk_id", 0)))
+            p0 = pts_sorted[0]["payload"]
+            texts = []
+            for p in pts_sorted[:3]:
+                t = (p["payload"].get("text") or "").strip()
+                if t:
+                    texts.append(t)
+
+            aggregated.append(AggregatedArticle(best_score=1.0, payload=p0, texts=texts))
+
+        if not aggregated:
+            return {"summary": "Ничего не найдено для генерации теста.", "articles": []}
+
+        articles, sources = self._build_sources(aggregated, limit_articles=min(len(aggregated), 5))
+        prompt = self._prompt_builder.build_quiz("Тест по выбранным материалам", sources, n_questions=req.n_questions)
+        quiz_text = self._llm.generate(prompt).strip()
+
+        if not quiz_text:
+            quiz_text = "Тест не удалось сгенерировать на основе найденных материалов."
+
+        if "Источники" not in quiz_text:
+            refs = "".join([f"[{i}]" for i in range(1, len(articles) + 1)])
+            quiz_text = quiz_text + f"Источники: {refs}"
+
+        return self._mapper.to_contract(quiz_text, articles)
 
