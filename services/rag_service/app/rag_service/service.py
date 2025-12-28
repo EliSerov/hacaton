@@ -122,7 +122,7 @@ class RagService:
         seed_url = req.url.strip()
         seed_article_id = str(uuid.uuid5(uuid.NAMESPACE_URL, seed_url))
 
-        seed_vec = self._qrepo.retrieve_vector(f"{seed_article_id}:0")
+        seed_vec = self._qrepo.retrieve_vector(seed_article_id)
         if seed_vec is None:
             qf = Filter(must=[FieldCondition(key="article_id", match=MatchValue(value=seed_article_id))])
             pts = self._qrepo.scroll_payloads(qf, limit=1)

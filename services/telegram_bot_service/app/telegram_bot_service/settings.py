@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     rag_routing_search: str = Field(default="search", alias="RAG_ROUTING_SEARCH")
     rag_routing_recommend: str = Field(default="recommend", alias="RAG_ROUTING_RECOMMEND")
     rag_routing_quiz: str = Field(default="quiz", alias="RAG_ROUTING_QUIZ")
-    rag_rpc_timeout_s: float = Field(default=120.0, alias="RAG_RPC_TIMEOUT_S")
+    rag_rpc_timeout_s: float = Field(default=250.0, alias="RAG_RPC_TIMEOUT_S")
 
     # Optional access control (comma-separated Telegram user ids). Empty => allow everyone.
     allowed_telegram_ids: str | None = Field(default=None, alias="ALLOWED_TELEGRAM_IDS")
